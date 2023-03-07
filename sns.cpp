@@ -26,6 +26,7 @@ typedef struct _node{
 const ll N = 37700;
 vector<ll>adj_list[N];
 vector<node>nodes(N);
+queue<user_action> shared_queue;
 
 void init_graph(){
     ifstream input_file("musae_git_edges.csv");
@@ -81,15 +82,57 @@ void *userSimulator(void *args){
                         break;
                 }
                 nodes[node_idx].wall_queue.push(new_act);
+                shared_queue.push(new_act);
             }
         }
         sleep(120);
     }
 }
 void *readPost(void *args){
+    while(1){ 
+        for(ll i=0; i<N; i++){ 
+            while(!nodes[i].feed_queue.empty()){
+                user_action curr_action = nodes[i].feed_queue.front();
+                nodes[i].feed_queue.pop();
+                string msg="I read action number ";
+                msg += to_string(curr_action.action_id);
+                msg += " of type ";
 
+                switch(curr_action.action_type){
+                    case POST:
+                        msg += "POST";
+                        break;
+                    case COMMENT:
+                        msg += "COMMENT";
+                        break;
+                    case LIKE:
+                        msg += "LIKE";
+                        break;
+                }
+
+                msg += " posted by user ";
+                msg += to_string(curr_action.user_id);
+                msg += " at time ";
+                msg += ctime(&curr_action.created_time);
+
+                cout<<msg<<endl;
+            }
+        }
+
+        sleep(1);
+    }
 }
-void *updatePost(void *args){
+void *pushUpdate(void *args){
+    while(1){
+        if(!shared_queue.empty()){
+            user_action new_action = shared_queue.front();
+            shared_queue.pop();
+            for(ll i=0; i<nodes[new_action.user_id].degree; i++){
+                nodes[adj_list[new_action.user_id][i]].feed_queue.push(new_action);
+            }
+        }
+        sleep(1);
+    }
 
 }
 int main(){
@@ -105,7 +148,7 @@ int main(){
             pthread_create(&threads[i],&attr,readPost,NULL);
         }
         else{
-            pthread_create(&threads[i],&attr,updatePost,NULL);
+            pthread_create(&threads[i],&attr,pushUpdate,NULL);
         }
     }
     for(ll i = 0; i < 36; i++)
