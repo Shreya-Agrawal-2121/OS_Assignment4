@@ -28,6 +28,9 @@ vector<ll>adj_list[N];
 vector<node>nodes(N);
 queue<user_action> shared_queue;
 
+ll num_mutual_frnds[N][N];
+
+
 void init_graph(){
     ifstream input_file("musae_git_edges.csv");
     string line;
@@ -53,6 +56,32 @@ void init_graph(){
         nodes[i].action_count_comment = nodes[i].action_count_like = nodes[i].action_count_post = 0LL;
     }
 }
+
+void update_mutual_friends_num(){
+    for(ll i=0; i<N; i++){
+        sort(adj_list[i].begin(), adj_list[i].end());
+    }
+    for(ll i=0; i<N; i++){
+        for(ll j=0; j<i; j++){
+            auto it1 = adj_list[i].begin();
+            auto it2 = adj_list[j].begin();
+            while((adj_list[i].end()-it1 > 0) && (adj_list[j].end()-it2 > 0)){
+                if(*it1 < *it2){
+                    while(*it1 < *it2 && (adj_list[i].end()-it1 > 0)) it1++;
+                }
+                else if(*it1 > *it2){
+                    while(*it1 > *it2 && (adj_list[j].end()-it2 > 0)) it2++;
+                }
+                else{
+                    num_mutual_frnds[i][j]++;
+                    num_mutual_frnds[j][i]++;
+                    it1++; it2++;
+                }
+            }
+        }
+    }
+}
+
 void *userSimulator(void *args){
     while(1){
         srand(time(0));
@@ -88,15 +117,35 @@ void *userSimulator(void *args){
         sleep(120);
     }
 }
+
+bool sortByTime(user_action a, user_action b){
+    return difftime(a.created_time, b.created_time)<0 ? true : false;
+}
+
+ll comp_userid;
+bool sortByPriority(user_action a, user_action b){
+    return num_mutual_frnds[a.user_id][comp_userid]<num_mutual_frnds[b.user_id][comp_userid] ? true : false;
+}
+
 void *readPost(void *args){
     while(1){ 
         for(ll i=0; i<N; i++){ 
+
+            if(!nodes[i].priority){
+                comp_userid = i;
+                sort(nodes[i].feed_queue.front(), nodes[i].feed_queue.back(), sortByPriority);
+            }
+            else{
+                sort(nodes[i].feed_queue.front(), nodes[i].feed_queue.back(), sortByTime);
+            }
+
             while(!nodes[i].feed_queue.empty()){
                 user_action curr_action = nodes[i].feed_queue.front();
                 nodes[i].feed_queue.pop();
                 string msg="I read action number ";
                 msg += to_string(curr_action.action_id);
                 msg += " of type ";
+
 
                 switch(curr_action.action_type){
                     case POST:
@@ -119,6 +168,30 @@ void *readPost(void *args){
             }
         }
 
+
+
+                switch(curr_action.action_type){
+                    case POST:
+                        msg += "POST";
+                        break;
+                    case COMMENT:
+                        msg += "COMMENT";
+                        break;
+                    case LIKE:
+                        msg += "LIKE";
+                        break;
+                }
+
+                msg += " posted by user ";
+                msg += to_string(curr_action.user_id);
+                msg += " at time ";
+                msg += ctime(&curr_action.created_time);
+
+                cout<<msg<<endl;
+            }
+        }
+
+
         sleep(1);
     }
 }
@@ -137,6 +210,7 @@ void *pushUpdate(void *args){
 }
 int main(){
     init_graph();
+    update_mutual_friends_num();
     pthread_t threads[36];
     pthread_attr_t attr;
     pthread_attr_init(&attr);
