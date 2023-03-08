@@ -27,7 +27,9 @@ const ll N = 37700;
 vector<ll>adj_list[N];
 vector<node>nodes(N);
 queue<user_action> shared_queue;
+
 ll num_mutual_frnds[N][N];
+
 
 void init_graph(){
     ifstream input_file("musae_git_edges.csv");
@@ -128,6 +130,7 @@ bool sortByPriority(user_action a, user_action b){
 void *readPost(void *args){
     while(1){ 
         for(ll i=0; i<N; i++){ 
+
             if(!nodes[i].priority){
                 comp_userid = i;
                 sort(nodes[i].feed_queue.front(), nodes[i].feed_queue.back(), sortByPriority);
@@ -135,12 +138,14 @@ void *readPost(void *args){
             else{
                 sort(nodes[i].feed_queue.front(), nodes[i].feed_queue.back(), sortByTime);
             }
+
             while(!nodes[i].feed_queue.empty()){
                 user_action curr_action = nodes[i].feed_queue.front();
                 nodes[i].feed_queue.pop();
                 string msg="I read action number ";
                 msg += to_string(curr_action.action_id);
                 msg += " of type ";
+
 
                 switch(curr_action.action_type){
                     case POST:
@@ -162,6 +167,30 @@ void *readPost(void *args){
                 cout<<msg<<endl;
             }
         }
+
+
+
+                switch(curr_action.action_type){
+                    case POST:
+                        msg += "POST";
+                        break;
+                    case COMMENT:
+                        msg += "COMMENT";
+                        break;
+                    case LIKE:
+                        msg += "LIKE";
+                        break;
+                }
+
+                msg += " posted by user ";
+                msg += to_string(curr_action.user_id);
+                msg += " at time ";
+                msg += ctime(&curr_action.created_time);
+
+                cout<<msg<<endl;
+            }
+        }
+
 
         sleep(1);
     }
