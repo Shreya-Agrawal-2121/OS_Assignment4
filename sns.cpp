@@ -165,8 +165,8 @@ void *readPost(void *args){
                 msg += ctime(&curr_action.created_time);
 
                 cout<<msg<<endl;
-            }
-        }
+            
+        
 
 
 
@@ -190,10 +190,10 @@ void *readPost(void *args){
                 cout<<msg<<endl;
             }
         }
-
+    }
 
         sleep(1);
-    }
+    
 }
 void *pushUpdate(void *args){
     while(1){
