@@ -28,7 +28,7 @@ vector<ll>adj_list[N];
 vector<node>nodes(N);
 queue<user_action> shared_queue;
 
-ll num_mutual_frnds[N][N];
+ll **num_mutual_frnds;
 
 
 void init_graph(){
@@ -55,33 +55,27 @@ void init_graph(){
         nodes[i].degree = adj_list[i].size();
         nodes[i].action_count_comment = nodes[i].action_count_like = nodes[i].action_count_post = 0LL;
     }
-}
-
-void update_mutual_friends_num(){
-    for(ll i=0; i<N; i++){
-        sort(adj_list[i].begin(), adj_list[i].end());
+    num_mutual_frnds = (ll **)malloc(N*sizeof(ll *));
+    for(ll i = 0; i < N; i++)
+        num_mutual_frnds[i] = (ll *)malloc(N*sizeof(ll));
+    for(ll i = 0; i < N; i++){
+        for(ll j = 0; j < N; j++)
+            num_mutual_frnds[i][j] = -1LL;
     }
-    for(ll i=0; i<N; i++){
-        for(ll j=0; j<i; j++){
-            auto it1 = adj_list[i].begin();
-            auto it2 = adj_list[j].begin();
-            while((adj_list[i].end()-it1 > 0) && (adj_list[j].end()-it2 > 0)){
-                if(*it1 < *it2){
-                    while(*it1 < *it2 && (adj_list[i].end()-it1 > 0)) it1++;
-                }
-                else if(*it1 > *it2){
-                    while(*it1 > *it2 && (adj_list[j].end()-it2 > 0)) it2++;
-                }
-                else{
-                    num_mutual_frnds[i][j]++;
-                    num_mutual_frnds[j][i]++;
-                    it1++; it2++;
-                }
-            }
+}
+void calc_mutual_friends(ll i,ll j){
+    num_mutual_frnds[i][j] = num_mutual_frnds[j][i] = 0LL;
+    set<ll>st;
+    for(auto it : adj_list[i])
+        st.insert(it);
+    for(auto it : adj_list[j]){
+        if(st.find(it) != st.end()){
+            num_mutual_frnds[i][j]++;
+            num_mutual_frnds[j][i]++;
         }
+
     }
 }
-
 void *userSimulator(void *args){
     while(1){
         srand(time(0));
@@ -130,15 +124,25 @@ bool sortByPriority(user_action a, user_action b){
 void *readPost(void *args){
     while(1){ 
         for(ll i=0; i<N; i++){ 
-
+            vector<user_action>temp;
+            while(!nodes[i].feed_queue.empty()){
+                temp.push_back(nodes[i].feed_queue.front());
+                nodes[i].feed_queue.pop();
+            }
             if(!nodes[i].priority){
                 comp_userid = i;
-                sort(nodes[i].feed_queue.front(), nodes[i].feed_queue.back(), sortByPriority);
+                for(auto it : temp){
+                    if(num_mutual_frnds[i][it.user_id] == -1){
+                        calc_mutual_friends(i,it.user_id);
+                    }
+                }
+                sort(temp.begin(),temp.end(), sortByPriority);
             }
             else{
-                sort(nodes[i].feed_queue.front(), nodes[i].feed_queue.back(), sortByTime);
+                sort(temp.begin(), temp.end(), sortByTime);
             }
-
+            for(auto it : temp)
+                nodes[i].feed_queue.push(it);
             while(!nodes[i].feed_queue.empty()){
                 user_action curr_action = nodes[i].feed_queue.front();
                 nodes[i].feed_queue.pop();
@@ -165,11 +169,6 @@ void *readPost(void *args){
                 msg += ctime(&curr_action.created_time);
 
                 cout<<msg<<endl;
-            
-        
-
-
-
                 switch(curr_action.action_type){
                     case POST:
                         msg += "POST";
@@ -210,8 +209,9 @@ void *pushUpdate(void *args){
 }
 int main(){
     init_graph();
-    update_mutual_friends_num();
-    pthread_t threads[36];
+    cout<<"ok1"<<"\n";
+    
+    /*pthread_t threads[36];
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     for(ll i = 0; i < 36; i++){
@@ -226,6 +226,6 @@ int main(){
         }
     }
     for(ll i = 0; i < 36; i++)
-        pthread_join(threads[i],NULL);
+        pthread_join(threads[i],NULL);*/
     return(0);
 }
