@@ -27,9 +27,9 @@ const ll N = 37700;
 vector<ll>adj_list[N];
 vector<node>nodes(N);
 queue<user_action> shared_queue;
-
 ll **num_mutual_frnds;
 
+pthread_mutex_t tlock;
 
 void init_graph(){
     ifstream input_file("musae_git_edges.csv");
@@ -77,39 +77,65 @@ void calc_mutual_friends(ll i,ll j){
     }
 }
 void *userSimulator(void *args){
+    
     while(1){
+        pthread_mutex_lock(&tlock);
+
         srand(time(0));
+        string msg = "";
         for(ll i = 0; i < 100; i++){
             ll node_idx = rand()%N;
             ll no_actions = (ll)floor(log2(nodes[node_idx].degree));
+            msg += "Random node : ";
+            msg += to_string(node_idx);
+            msg += "\n";
+            msg += "No of actions generated: ";
+            msg += to_string(no_actions);
+            msg += "\n";
+            msg += "Degree of node: ";
+            msg += to_string(nodes[node_idx].degree);
+            msg += "\n";
+            msg += "Actions generated :";
             for(ll j = 0; j < no_actions; j++){
                 ll act_type = rand()%3;
                 user_action new_act;
                 new_act.user_id = node_idx;
                 new_act.created_time = time(NULL);
+                
                 switch(act_type){
                     case 0:
                         new_act.action_type = POST;
                         nodes[node_idx].action_count_post++;
                         new_act.action_id = nodes[node_idx].action_count_post;
+                        msg += "POST";
                         break;
                     case 1:
                         new_act.action_type = COMMENT;
                         nodes[node_idx].action_count_comment++;
                         new_act.action_id = nodes[node_idx].action_count_comment;
+                        msg += "COMMENT";
                         break;
                     case 2:
                         new_act.action_type = LIKE;
                         nodes[node_idx].action_count_like++;
                         new_act.action_id = nodes[node_idx].action_count_like;
+                        msg += "LIKE";
                         break;
                 }
+                if(j == no_actions - 1)
+                    msg += "\n";
+                else
+                    msg += ", ";
                 nodes[node_idx].wall_queue.push(new_act);
                 shared_queue.push(new_act);
             }
         }
+        cout<<msg<<"\n";
+        pthread_mutex_unlock(&tlock);
+
         sleep(120);
     }
+    return NULL;
 }
 
 bool sortByTime(user_action a, user_action b){
@@ -123,6 +149,8 @@ bool sortByPriority(user_action a, user_action b){
 
 void *readPost(void *args){
     while(1){ 
+            pthread_mutex_lock(&tlock);
+
         for(ll i=0; i<N; i++){ 
             vector<user_action>temp;
             while(!nodes[i].feed_queue.empty()){
@@ -189,13 +217,21 @@ void *readPost(void *args){
                 cout<<msg<<endl;
             }
         }
-    }
+        pthread_mutex_unlock(&tlock);
+        
 
         sleep(1);
-    
+
+
+    }
+
+        return NULL;
+
 }
 void *pushUpdate(void *args){
     while(1){
+            pthread_mutex_lock(&tlock);
+
         if(!shared_queue.empty()){
             user_action new_action = shared_queue.front();
             shared_queue.pop();
@@ -203,17 +239,25 @@ void *pushUpdate(void *args){
                 nodes[adj_list[new_action.user_id][i]].feed_queue.push(new_action);
             }
         }
+                    pthread_mutex_unlock(&tlock);
+
         sleep(1);
     }
+        return NULL;
+
 
 }
 int main(){
     init_graph();
-    cout<<"ok1"<<"\n";
+    //cout<<"ok1"<<"\n";
     
-    /*pthread_t threads[36];
+    pthread_t threads[36];
     pthread_attr_t attr;
     pthread_attr_init(&attr);
+    if (pthread_mutex_init(&tlock, NULL) != 0) {
+        printf("\n mutex init has failed\n");
+        return 1;
+    }
     for(ll i = 0; i < 36; i++){
         if(i == 0){
             pthread_create(&threads[i],&attr,userSimulator,NULL);
@@ -226,6 +270,9 @@ int main(){
         }
     }
     for(ll i = 0; i < 36; i++)
-        pthread_join(threads[i],NULL);*/
+        pthread_join(threads[i],NULL);
+
+        pthread_mutex_destroy(&tlock);
+
     return(0);
 }
