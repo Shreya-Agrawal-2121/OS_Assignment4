@@ -174,29 +174,11 @@ void *readPost(void *args){
             while(!nodes[i].feed_queue.empty()){
                 user_action curr_action = nodes[i].feed_queue.front();
                 nodes[i].feed_queue.pop();
-                string msg="I read action number ";
+                string msg="Read action number ";
                 msg += to_string(curr_action.action_id);
                 msg += " of type ";
 
 
-                switch(curr_action.action_type){
-                    case POST:
-                        msg += "POST";
-                        break;
-                    case COMMENT:
-                        msg += "COMMENT";
-                        break;
-                    case LIKE:
-                        msg += "LIKE";
-                        break;
-                }
-
-                msg += " posted by user ";
-                msg += to_string(curr_action.user_id);
-                msg += " at time ";
-                msg += ctime(&curr_action.created_time);
-
-                cout<<msg<<endl;
                 switch(curr_action.action_type){
                     case POST:
                         msg += "POST";
