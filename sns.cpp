@@ -30,7 +30,7 @@ queue<user_action> shared_queue;
 ll **num_mutual_frnds;
 
 pthread_mutex_t tlock;
-
+pthread_cond_t tcond;
 void init_graph(){
     ifstream input_file("musae_git_edges.csv");
     string line;
@@ -128,6 +128,7 @@ void *userSimulator(void *args){
                     msg += ", ";
                 nodes[node_idx].wall_queue.push(new_act);
                 shared_queue.push(new_act);
+                pthread_cond_broadcast(&tcond);
             }
         }
         cout<<msg<<"\n";
@@ -193,7 +194,7 @@ void *readPost(void *args){
 
                 msg += " posted by user ";
                 msg += to_string(curr_action.user_id);
-                msg += " at time ";
+                msg += "created at time ";
                 msg += ctime(&curr_action.created_time);
 
                 cout<<msg<<endl;
@@ -213,15 +214,17 @@ void *readPost(void *args){
 void *pushUpdate(void *args){
     while(1){
             pthread_mutex_lock(&tlock);
-
-        if(!shared_queue.empty()){
+            while(shared_queue.empty()){
+                pthread_cond_wait(&tcond,&tlock);
+            }
+        
             user_action new_action = shared_queue.front();
             shared_queue.pop();
             for(ll i=0; i<nodes[new_action.user_id].degree; i++){
                 nodes[adj_list[new_action.user_id][i]].feed_queue.push(new_action);
             }
-        }
-                    pthread_mutex_unlock(&tlock);
+        
+            pthread_mutex_unlock(&tlock);
 
         sleep(1);
     }
