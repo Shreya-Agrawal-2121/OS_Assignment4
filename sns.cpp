@@ -28,9 +28,9 @@ vector<ll>adj_list[N];
 vector<node>nodes(N);
 queue<user_action> shared_queue;
 ll **num_mutual_frnds;
-
+ll count_empty_feed = N;
 pthread_mutex_t tlock;
-pthread_cond_t tcond;
+pthread_cond_t tcond,tread;
 void init_graph(){
     ifstream input_file("musae_git_edges.csv");
     string line;
@@ -151,18 +151,27 @@ bool sortByPriority(user_action a, user_action b){
 void *readPost(void *args){
     while(1){ 
             pthread_mutex_lock(&tlock);
+            while(count_empty_feed == N)
+                pthread_cond_wait(&tread,&tlock);
+            ll idx = -1;
+            for(ll i = 0; i < N; i++){
+                if(!nodes[i].feed_queue.empty()){
+                    idx = i;
+                    break;
+                }
 
-        for(ll i=0; i<N; i++){ 
-            vector<user_action>temp;
-            while(!nodes[i].feed_queue.empty()){
-                temp.push_back(nodes[i].feed_queue.front());
-                nodes[i].feed_queue.pop();
             }
-            if(!nodes[i].priority){
-                comp_userid = i;
+        //for(ll i=0; i<N; i++){ 
+            vector<user_action>temp;
+            while(!nodes[idx].feed_queue.empty()){
+                temp.push_back(nodes[idx].feed_queue.front());
+                nodes[idx].feed_queue.pop();
+            }
+            if(!nodes[idx].priority){
+                comp_userid = idx;
                 for(auto it : temp){
-                    if(num_mutual_frnds[i][it.user_id] == -1){
-                        calc_mutual_friends(i,it.user_id);
+                    if(num_mutual_frnds[idx][it.user_id] == -1){
+                        calc_mutual_friends(idx,it.user_id);
                     }
                 }
                 sort(temp.begin(),temp.end(), sortByPriority);
@@ -171,10 +180,10 @@ void *readPost(void *args){
                 sort(temp.begin(), temp.end(), sortByTime);
             }
             for(auto it : temp)
-                nodes[i].feed_queue.push(it);
-            while(!nodes[i].feed_queue.empty()){
-                user_action curr_action = nodes[i].feed_queue.front();
-                nodes[i].feed_queue.pop();
+                nodes[idx].feed_queue.push(it);
+            while(!nodes[idx].feed_queue.empty()){
+                user_action curr_action = nodes[idx].feed_queue.front();
+                nodes[idx].feed_queue.pop();
                 string msg="Read action number ";
                 msg += to_string(curr_action.action_id);
                 msg += " of type ";
@@ -199,7 +208,8 @@ void *readPost(void *args){
 
                 cout<<msg<<endl;
             }
-        }
+            count_empty_feed++;
+        //}
         pthread_mutex_unlock(&tlock);
         
 
@@ -221,7 +231,11 @@ void *pushUpdate(void *args){
             user_action new_action = shared_queue.front();
             shared_queue.pop();
             for(ll i=0; i<nodes[new_action.user_id].degree; i++){
+                ll v = adj_list[new_action.user_id][i];
+                if(nodes[v].feed_queue.empty())
+                    count_empty_feed--;
                 nodes[adj_list[new_action.user_id][i]].feed_queue.push(new_action);
+                pthread_cond_broadcast(&tread);
             }
         
             pthread_mutex_unlock(&tlock);
