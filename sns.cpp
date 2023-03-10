@@ -38,8 +38,7 @@ ll **num_mutual_frnds;
 ll count_empty_feed = N;
 pthread_mutex_t tlock, tcount;
 pthread_cond_t tcond, tread;
-string logFileName = "sns.log";
-FILE *fp = fopen("sns.log","w");
+FILE *fp = fopen("sns.log", "w");
 void init_graph()
 {
     ifstream input_file("musae_git_edges.csv");
@@ -95,11 +94,9 @@ void calc_mutual_friends(ll i, ll j)
 }
 void *userSimulator(void *args)
 {
-    
 
     while (1)
     {
-        pthread_mutex_lock(&tlock);
 
         srand(time(0));
         string msg = "";
@@ -118,6 +115,7 @@ void *userSimulator(void *args)
             msg += to_string(nodes[node_idx].degree);
             msg += "\n";
             msg += "Actions generated :";
+            pthread_mutex_lock(&tlock);
             for (ll j = 0; j < no_actions; j++)
             {
                 ll act_type = rand() % 3;
@@ -154,18 +152,18 @@ void *userSimulator(void *args)
                 shared_queue.push(new_act);
                 pthread_cond_broadcast(&tcond);
             }
+            pthread_mutex_unlock(&tlock);
         }
+        pthread_mutex_lock(&tlock);
         cout << msg << "\n";
         time_t now = time(0);
-        char* dt = ctime(&now);
-        
-            // write to the log file
-        fprintf(fp,"%s:",dt);
-        fprintf(fp,"%s\n",msg.c_str());
-
+        char *dt = ctime(&now);
+        // write to the log file
+        fprintf(fp, "%s:", dt);
+        fprintf(fp, "%s\n", msg.c_str());
         pthread_mutex_unlock(&tlock);
 
-        sleep(120);
+        sleep(20);
     }
     return NULL;
 }
@@ -183,7 +181,6 @@ bool sortByPriority(user_action a, user_action b)
 
 void *readPost(void *args)
 {
-    
 
     while (1)
     {
@@ -191,8 +188,9 @@ void *readPost(void *args)
         while (count_empty_feed == N)
             pthread_cond_wait(&tread, &tcount);
         pthread_mutex_unlock(&tcount);
-        pthread_mutex_lock(&tlock);
         ll idx = -1;
+
+        pthread_mutex_lock(&tlock);
         for (ll i = 0; i < N; i++)
         {
             if (!nodes[i].feed_queue.empty())
@@ -210,8 +208,11 @@ void *readPost(void *args)
         }
 
         ll prior = nodes[idx].priority;
+        
         pthread_mutex_unlock(&tlock);
-
+        pthread_mutex_lock(&tcount);
+        count_empty_feed++;
+        pthread_mutex_unlock(&tcount);
         if (!prior)
         {
             comp_userid = idx;
@@ -228,15 +229,11 @@ void *readPost(void *args)
         {
             sort(temp.begin(), temp.end(), sortByTime);
         }
-        pthread_mutex_lock(&tlock);
-
-        for (auto it : temp)
-            nodes[idx].feed_queue.push(it);
+        
         string msg = "";
-        while (!nodes[idx].feed_queue.empty())
+        for(auto it : temp)
         {
-            user_action curr_action = nodes[idx].feed_queue.front();
-            nodes[idx].feed_queue.pop();
+            user_action curr_action = it;
             msg += "Read action number ";
             msg += to_string(curr_action.action_id);
             msg += " of type ";
@@ -260,22 +257,15 @@ void *readPost(void *args)
             msg += ctime(&curr_action.created_time);
             msg += "\n";
         }
-        pthread_mutex_unlock(&tlock);
 
-        pthread_mutex_lock(&tcount);
-        count_empty_feed++;
-        pthread_mutex_unlock(&tcount);
+        
         pthread_mutex_lock(&tlock);
         cout << msg << endl;
         time_t now = time(0);
-        char* dt = ctime(&now);
-        
-        fprintf(fp,"%s:",dt);
-        fprintf(fp,"%s\n",msg.c_str());
+        char *dt = ctime(&now);
 
-            
-        
-        
+        fprintf(fp, "%s:", dt);
+        fprintf(fp, "%s\n", msg.c_str());
         pthread_mutex_unlock(&tlock);
         sleep(1);
     }
@@ -324,7 +314,7 @@ int main()
 {
     init_graph();
     // cout<<"ok1"<<"\n";
-   
+
     pthread_t threads[36];
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -358,6 +348,6 @@ int main()
 
     pthread_mutex_destroy(&tlock);
     pthread_mutex_destroy(&tcount);
-    fclose(fp);
+
     return (0);
 }
