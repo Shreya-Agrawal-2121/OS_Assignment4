@@ -38,6 +38,8 @@ ll **num_mutual_frnds;
 ll count_empty_feed = N;
 pthread_mutex_t tlock, tcount;
 pthread_cond_t tcond, tread;
+string logFileName = "sns.log";
+FILE *fp = fopen("sns.log","w");
 void init_graph()
 {
     ifstream input_file("musae_git_edges.csv");
@@ -93,6 +95,7 @@ void calc_mutual_friends(ll i, ll j)
 }
 void *userSimulator(void *args)
 {
+    
 
     while (1)
     {
@@ -153,21 +156,13 @@ void *userSimulator(void *args)
             }
         }
         cout << msg << "\n";
-
-        string logFileName = "sns.log";
-        ofstream logFile(logFileName);
-        if (logFile.is_open())
-        {
+        time_t now = time(0);
+        char* dt = ctime(&now);
+        
             // write to the log file
-            logFile << msg << endl;
+        fprintf(fp,"%s:",dt);
+        fprintf(fp,"%s\n",msg.c_str());
 
-            // close the log file
-            logFile.close();
-        }
-        else
-        {
-            cout << "Failed to open log file." << endl;
-        }
         pthread_mutex_unlock(&tlock);
 
         sleep(120);
@@ -188,6 +183,8 @@ bool sortByPriority(user_action a, user_action b)
 
 void *readPost(void *args)
 {
+    
+
     while (1)
     {
         pthread_mutex_lock(&tcount);
@@ -270,21 +267,15 @@ void *readPost(void *args)
         pthread_mutex_unlock(&tcount);
         pthread_mutex_lock(&tlock);
         cout << msg << endl;
-        ofstream log_File;
-        string logFileName = "sns.log";
-        log_File.open(logFileName, ios::app);
-        if (log_File.is_open())
-        {
-            // write to the log file
-            log_File << msg << endl;
+        time_t now = time(0);
+        char* dt = ctime(&now);
+        
+        fprintf(fp,"%s:",dt);
+        fprintf(fp,"%s\n",msg.c_str());
 
-            // close the log file
-            log_File.close();
-        }
-        else
-        {
-            cout << "Failed to open log file." << endl;
-        }
+            
+        
+        
         pthread_mutex_unlock(&tlock);
         sleep(1);
     }
@@ -333,7 +324,7 @@ int main()
 {
     init_graph();
     // cout<<"ok1"<<"\n";
-
+   
     pthread_t threads[36];
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -367,5 +358,6 @@ int main()
 
     pthread_mutex_destroy(&tlock);
     pthread_mutex_destroy(&tcount);
+    fclose(fp);
     return (0);
 }
