@@ -36,7 +36,7 @@ vector<node> nodes(N);
 queue<user_action> shared_queue;
 ll **num_mutual_frnds;
 ll count_empty_feed = N;
-pthread_mutex_t tlock;
+pthread_mutex_t tlock, tcount;
 pthread_cond_t tcond, tread;
 void init_graph()
 {
@@ -100,12 +100,7 @@ void *userSimulator(void *args)
 
         srand(time(0));
         string msg = "";
-        // get the current date/time
-        time_t now = time(0);
-        char *dt = ctime(&now);
 
-        string logFileName = "sns.log";
-        ofstream logFile(logFileName);
         for (ll i = 0; i < 100; i++)
         {
             ll node_idx = rand() % N;
@@ -158,6 +153,9 @@ void *userSimulator(void *args)
             }
         }
         cout << msg << "\n";
+
+        string logFileName = "sns.log";
+        ofstream logFile(logFileName);
         if (logFile.is_open())
         {
             // write to the log file
@@ -173,7 +171,6 @@ void *userSimulator(void *args)
         pthread_mutex_unlock(&tlock);
 
         sleep(120);
-       
     }
     return NULL;
 }
@@ -193,9 +190,11 @@ void *readPost(void *args)
 {
     while (1)
     {
-        pthread_mutex_lock(&tlock);
+        pthread_mutex_lock(&tcount);
         while (count_empty_feed == N)
-            pthread_cond_wait(&tread, &tlock);
+            pthread_cond_wait(&tread, &tcount);
+        pthread_mutex_unlock(&tcount);
+        pthread_mutex_lock(&tlock);
         ll idx = -1;
         for (ll i = 0; i < N; i++)
         {
@@ -205,14 +204,18 @@ void *readPost(void *args)
                 break;
             }
         }
-        // for(ll i=0; i<N; i++){
+
         vector<user_action> temp;
         while (!nodes[idx].feed_queue.empty())
         {
             temp.push_back(nodes[idx].feed_queue.front());
             nodes[idx].feed_queue.pop();
         }
-        if (!nodes[idx].priority)
+
+        ll prior = nodes[idx].priority;
+        pthread_mutex_unlock(&tlock);
+
+        if (!prior)
         {
             comp_userid = idx;
             for (auto it : temp)
@@ -228,13 +231,16 @@ void *readPost(void *args)
         {
             sort(temp.begin(), temp.end(), sortByTime);
         }
+        pthread_mutex_lock(&tlock);
+
         for (auto it : temp)
             nodes[idx].feed_queue.push(it);
+        string msg = "";
         while (!nodes[idx].feed_queue.empty())
         {
             user_action curr_action = nodes[idx].feed_queue.front();
             nodes[idx].feed_queue.pop();
-            string msg = "Read action number ";
+            msg += "Read action number ";
             msg += to_string(curr_action.action_id);
             msg += " of type ";
 
@@ -255,35 +261,32 @@ void *readPost(void *args)
             msg += to_string(curr_action.user_id);
             msg += "created at time ";
             msg += ctime(&curr_action.created_time);
-
-            cout << msg << endl;
-            // get the current date/time
-            time_t now = time(0);
-            char *dt = ctime(&now);
-
-            ofstream log_File;
-            string logFileName = "sns.log";
-            log_File.open(logFileName, ios::app);
-            if (log_File.is_open())
-            {
-                // write to the log file
-                log_File << msg << endl;
-
-                // close the log file
-                log_File.close();
-            }
-            else
-            {
-                cout << "Failed to open log file." << endl;
-            }
+            msg += "\n";
         }
-        count_empty_feed++;
-        //}
-
         pthread_mutex_unlock(&tlock);
 
+        pthread_mutex_lock(&tcount);
+        count_empty_feed++;
+        pthread_mutex_unlock(&tcount);
+        pthread_mutex_lock(&tlock);
+        cout << msg << endl;
+        ofstream log_File;
+        string logFileName = "sns.log";
+        log_File.open(logFileName, ios::app);
+        if (log_File.is_open())
+        {
+            // write to the log file
+            log_File << msg << endl;
+
+            // close the log file
+            log_File.close();
+        }
+        else
+        {
+            cout << "Failed to open log file." << endl;
+        }
+        pthread_mutex_unlock(&tlock);
         sleep(1);
-        
     }
 
     return NULL;
@@ -300,19 +303,29 @@ void *pushUpdate(void *args)
 
         user_action new_action = shared_queue.front();
         shared_queue.pop();
+        pthread_mutex_unlock(&tlock);
+
         for (ll i = 0; i < nodes[new_action.user_id].degree; i++)
         {
             ll v = adj_list[new_action.user_id][i];
+            bool empty = false;
+            pthread_mutex_lock(&tlock);
             if (nodes[v].feed_queue.empty())
+            {
+                empty = true;
+            }
+            nodes[v].feed_queue.push(new_action);
+            pthread_mutex_unlock(&tlock);
+            if (empty)
+            {
+                pthread_mutex_lock(&tcount);
                 count_empty_feed--;
-            nodes[adj_list[new_action.user_id][i]].feed_queue.push(new_action);
+                pthread_mutex_unlock(&tcount);
+            }
             pthread_cond_broadcast(&tread);
         }
 
-        pthread_mutex_unlock(&tlock);
-
         sleep(1);
-        
     }
     return NULL;
 }
@@ -325,6 +338,11 @@ int main()
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     if (pthread_mutex_init(&tlock, NULL) != 0)
+    {
+        printf("\n mutex init has failed\n");
+        return 1;
+    }
+    if (pthread_mutex_init(&tcount, NULL) != 0)
     {
         printf("\n mutex init has failed\n");
         return 1;
@@ -348,6 +366,6 @@ int main()
         pthread_join(threads[i], NULL);
 
     pthread_mutex_destroy(&tlock);
-
+    pthread_mutex_destroy(&tcount);
     return (0);
 }
