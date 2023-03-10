@@ -33,9 +33,17 @@ typedef struct _node
 const ll N = 37700;
 vector<ll> adj_list[N];
 vector<node> nodes(N);
+pthread_mutex_t node_array_lock;
+
 queue<user_action> shared_queue;
+pthread_mutex_t shared_queue_lock;
+
 ll **num_mutual_frnds;
-ll count_empty_feed = N;
+pthread_mutex_t mut_frnds_lock;
+
+queue<node> nodes_to_read;
+pthread_mutex_t read_queue_lock;
+
 pthread_mutex_t tlock, tcount;
 pthread_cond_t tcond, tread;
 FILE *fp = fopen("sns.log", "w");
@@ -76,9 +84,11 @@ void init_graph()
         for (ll j = 0; j < N; j++)
             num_mutual_frnds[i][j] = -1LL;
     }
+    //cout<<"ok2"<<"\n";
 }
 void calc_mutual_friends(ll i, ll j)
 {
+    if(num_mutual_frnds[i][j] != -1) return;
     num_mutual_frnds[i][j] = num_mutual_frnds[j][i] = 0LL;
     set<ll> st;
     for (auto it : adj_list[i])
@@ -94,7 +104,6 @@ void calc_mutual_friends(ll i, ll j)
 }
 void *userSimulator(void *args)
 {
-
     while (1)
     {
 
@@ -105,6 +114,7 @@ void *userSimulator(void *args)
         {
             ll node_idx = rand() % N;
             ll no_actions = (ll)floor(log2(nodes[node_idx].degree));
+           
             msg += "Random node : ";
             msg += to_string(node_idx);
             msg += "\n";
@@ -115,14 +125,15 @@ void *userSimulator(void *args)
             msg += to_string(nodes[node_idx].degree);
             msg += "\n";
             msg += "Actions generated :";
-            pthread_mutex_lock(&tlock);
+            
             for (ll j = 0; j < no_actions; j++)
             {
                 ll act_type = rand() % 3;
                 user_action new_act;
                 new_act.user_id = node_idx;
                 new_act.created_time = time(NULL);
-
+                //cout<<"ok";
+                pthread_mutex_lock(&node_array_lock);
                 switch (act_type)
                 {
                 case 0:
@@ -145,25 +156,31 @@ void *userSimulator(void *args)
                     break;
                 }
                 if (j == no_actions - 1)
-                    msg += "\n";
+                    msg += "\n";     
                 else
                     msg += ", ";
                 nodes[node_idx].wall_queue.push(new_act);
+                pthread_mutex_unlock(&node_array_lock);
+
+                pthread_mutex_lock(&shared_queue_lock);
                 shared_queue.push(new_act);
+                
+                pthread_mutex_unlock(&shared_queue_lock);
                 pthread_cond_broadcast(&tcond);
             }
-            pthread_mutex_unlock(&tlock);
         }
-        pthread_mutex_lock(&tlock);
-        cout << msg << "\n";
+        
+        cout << msg << endl;
+       
+        // write to the log file 
         time_t now = time(0);
         char *dt = ctime(&now);
-        // write to the log file
+        pthread_mutex_lock(&tlock);
         fprintf(fp, "%s:", dt);
         fprintf(fp, "%s\n", msg.c_str());
         pthread_mutex_unlock(&tlock);
 
-        sleep(20);
+        sleep(120);
     }
     return NULL;
 }
@@ -184,22 +201,18 @@ void *readPost(void *args)
 
     while (1)
     {
-        pthread_mutex_lock(&tcount);
-        while (count_empty_feed == N)
-            pthread_cond_wait(&tread, &tcount);
-        pthread_mutex_unlock(&tcount);
+        pthread_mutex_lock(&read_queue_lock);
+        while(nodes_to_read.empty())
+        pthread_cond_wait(&tread, &read_queue_lock);
+        
+
         ll idx = -1;
+        
+        idx = nodes_to_read.front().id;
+        nodes_to_read.pop();
+        pthread_mutex_unlock(&read_queue_lock);
 
-        pthread_mutex_lock(&tlock);
-        for (ll i = 0; i < N; i++)
-        {
-            if (!nodes[i].feed_queue.empty())
-            {
-                idx = i;
-                break;
-            }
-        }
-
+        pthread_mutex_lock(&node_array_lock);
         vector<user_action> temp;
         while (!nodes[idx].feed_queue.empty())
         {
@@ -208,20 +221,16 @@ void *readPost(void *args)
         }
 
         ll prior = nodes[idx].priority;
-        
-        pthread_mutex_unlock(&tlock);
-        pthread_mutex_lock(&tcount);
-        count_empty_feed++;
-        pthread_mutex_unlock(&tcount);
+        pthread_mutex_unlock(&node_array_lock);
+
         if (!prior)
         {
             comp_userid = idx;
             for (auto it : temp)
             {
-                if (num_mutual_frnds[idx][it.user_id] == -1)
-                {
-                    calc_mutual_friends(idx, it.user_id);
-                }
+                pthread_mutex_lock(&mut_frnds_lock);
+                calc_mutual_friends(idx, it.user_id);
+                pthread_mutex_lock(&mut_frnds_lock);
             }
             sort(temp.begin(), temp.end(), sortByPriority);
         }
@@ -258,62 +267,77 @@ void *readPost(void *args)
             msg += "\n";
         }
 
-        
-        pthread_mutex_lock(&tlock);
         cout << msg << endl;
         time_t now = time(0);
         char *dt = ctime(&now);
 
+        pthread_mutex_lock(&tlock);
         fprintf(fp, "%s:", dt);
         fprintf(fp, "%s\n", msg.c_str());
         pthread_mutex_unlock(&tlock);
-        sleep(1);
-    }
 
+
+    }
+    
     return NULL;
 }
+
 void *pushUpdate(void *args)
 {
     while (1)
     {
-        pthread_mutex_lock(&tlock);
+        pthread_mutex_lock(&shared_queue_lock);
         while (shared_queue.empty())
         {
-            pthread_cond_wait(&tcond, &tlock);
+            pthread_cond_wait(&tcond, &shared_queue_lock);
         }
 
         user_action new_action = shared_queue.front();
         shared_queue.pop();
-        pthread_mutex_unlock(&tlock);
+        pthread_mutex_unlock(&shared_queue_lock);
 
         for (ll i = 0; i < nodes[new_action.user_id].degree; i++)
-        {
+        {   
             ll v = adj_list[new_action.user_id][i];
             bool empty = false;
-            pthread_mutex_lock(&tlock);
+            pthread_mutex_lock(&node_array_lock);
             if (nodes[v].feed_queue.empty())
             {
                 empty = true;
             }
             nodes[v].feed_queue.push(new_action);
+            pthread_mutex_unlock(&node_array_lock);
+
+            string msg="Pushed action from wall queue of ";
+            msg += to_string(i);
+            msg += "to the feed queue of ";
+            msg += to_string(v);
+            time_t now = time(0);
+            char *dt = ctime(&now);
+            cout<<msg<<endl;
+            pthread_mutex_lock(&tlock);
+
+            fprintf(fp, "%s:", dt);
+            fprintf(fp, "%s\n", msg.c_str());
             pthread_mutex_unlock(&tlock);
-            if (empty)
-            {
-                pthread_mutex_lock(&tcount);
-                count_empty_feed--;
-                pthread_mutex_unlock(&tcount);
-            }
+
+            //if (empty)
+            //{
+                pthread_mutex_lock(&read_queue_lock);
+                nodes_to_read.push(nodes[v]);
+                pthread_mutex_unlock(&read_queue_lock);
+            //}
             pthread_cond_broadcast(&tread);
         }
 
-        sleep(1);
+        
     }
     return NULL;
 }
 int main()
 {
     init_graph();
-    // cout<<"ok1"<<"\n";
+    //cout<<"ok1"<<"\n";
 
     pthread_t threads[36];
     pthread_attr_t attr;
@@ -324,6 +348,26 @@ int main()
         return 1;
     }
     if (pthread_mutex_init(&tcount, NULL) != 0)
+    {
+        printf("\n mutex init has failed\n");
+        return 1;
+    }
+    if (pthread_mutex_init(&node_array_lock, NULL) != 0)
+    {
+        printf("\n mutex init has failed\n");
+        return 1;
+    }
+    if (pthread_mutex_init(&shared_queue_lock, NULL) != 0)
+    {
+        printf("\n mutex init has failed\n");
+        return 1;
+    }
+    if (pthread_mutex_init(&mut_frnds_lock, NULL) != 0)
+    {
+        printf("\n mutex init has failed\n");
+        return 1;
+    }
+    if (pthread_mutex_init(&read_queue_lock, NULL) != 0)
     {
         printf("\n mutex init has failed\n");
         return 1;
@@ -348,6 +392,10 @@ int main()
 
     pthread_mutex_destroy(&tlock);
     pthread_mutex_destroy(&tcount);
-
+    pthread_mutex_destroy(&node_array_lock);
+    pthread_mutex_destroy(&shared_queue_lock);
+    pthread_mutex_destroy(&mut_frnds_lock);
+    pthread_mutex_destroy(&read_queue_lock);
+    
     return (0);
 }
